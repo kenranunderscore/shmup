@@ -13,7 +13,7 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MyLib
+    exposed-modules:  Shmup.Main
     build-depends:    base
     hs-source-dirs:   src-lib
     default-language: GHC2021
