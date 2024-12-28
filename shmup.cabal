@@ -19,7 +19,7 @@ library
     , base
 
   hs-source-dirs:   src-lib
-  default-language: GHC2021
+  default-language: GHC2024
 
 executable shmup
   import:           warnings
@@ -29,4 +29,4 @@ executable shmup
     , shmup
 
   hs-source-dirs:   src-exe
-  default-language: GHC2021
+  default-language: GHC2024
