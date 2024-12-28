@@ -44,6 +44,7 @@
             packages = p: [ p.shmup ];
             nativeBuildInputs = [
               pkgs.hspkgs.cabal-install
+              pkgs.hspkgs.cabal-fmt
               pkgs.hspkgs.haskell-language-server
             ];
           };

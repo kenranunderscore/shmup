@@ -1,27 +1,32 @@
-cabal-version:      3.0
-name:               shmup
-version:            0.1.0.0
-license:            MIT
-license-file:       LICENSE
-author:             Johannes Maier
-maintainer:         johannes.maier@mailbox.org
-build-type:         Simple
-extra-doc-files:    CHANGELOG.md
+cabal-version:   3.0
+name:            shmup
+version:         0.1.0.0
+license:         MIT
+license-file:    LICENSE
+author:          Johannes Maier
+maintainer:      johannes.maier@mailbox.org
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
 
 common warnings
-    ghc-options: -Wall
+  ghc-options: -Wall
 
 library
-    import:           warnings
-    exposed-modules:  Shmup.Main
-    build-depends:    base
-    hs-source-dirs:   src-lib
-    default-language: GHC2021
+  import:           warnings
+  exposed-modules:  Shmup.Main
+  build-depends:
+    , async
+    , base
+
+  hs-source-dirs:   src-lib
+  default-language: GHC2021
 
 executable shmup
-    import:           warnings
-    main-is:          Main.hs
-    build-depends:    base
-                    , shmup
-    hs-source-dirs:   src-exe
-    default-language: GHC2021
+  import:           warnings
+  main-is:          Main.hs
+  build-depends:
+    , base
+    , shmup
+
+  hs-source-dirs:   src-exe
+  default-language: GHC2021
