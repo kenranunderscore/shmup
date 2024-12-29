@@ -1,5 +1,6 @@
 module Shmup.Main (main) where
 
+import System.Directory qualified as Dir
 import System.IO (BufferMode (..), hFlush, hSetBuffering, stdout)
 
 drawPrompt :: IO ()
@@ -9,7 +10,8 @@ drawPrompt = do
 
 data Builtin
     = Exit
-    | Cd String
+    | Cd FilePath
+    | Pwd
     deriving (Show, Eq)
 
 data Command
@@ -23,6 +25,7 @@ readCommand line =
         [] -> error "impossible?"
         "exit" : _ -> Builtin Exit
         "cd" : dir : _ -> Builtin (Cd dir)
+        "pwd" : _ -> Builtin Pwd
         _ -> Other line
 
 main :: IO ()
@@ -39,6 +42,11 @@ main = do
                 pure ()
             Builtin (Cd dir) -> do
                 putStrLn $ "Changing directory to: " <> dir
+                Dir.setCurrentDirectory dir
+                go
+            Builtin Pwd -> do
+                pwd <- Dir.getCurrentDirectory
+                putStrLn $ "Current directory: " <> pwd
                 go
             Other cmd -> do
                 putStrLn $ "The command was: " <> cmd

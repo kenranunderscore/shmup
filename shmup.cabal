@@ -17,6 +17,7 @@ library
   build-depends:
     , async
     , base
+    , directory
 
   hs-source-dirs:   src-lib
   default-language: GHC2024
