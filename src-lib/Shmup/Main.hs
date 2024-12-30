@@ -1,7 +1,10 @@
 module Shmup.Main (main) where
 
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
 import System.Directory qualified as Dir
 import System.IO (BufferMode (..), hFlush, hSetBuffering, stdout)
+import System.Process qualified as Proc
 
 drawPrompt :: IO ()
 drawPrompt = do
@@ -17,7 +20,7 @@ data Builtin
 
 data Command
     = Builtin Builtin
-    | Other String
+    | Other (NonEmpty String)
     deriving (Show, Eq)
 
 readCommand :: String -> Command
@@ -28,7 +31,7 @@ readCommand line =
         "cd" : dir : _ -> Builtin (Cd dir)
         "pwd" : _ -> Builtin Pwd
         "echo" : msg : _ -> Builtin (Echo msg)
-        _ -> Other line
+        args@(x : xs) -> Other (x NonEmpty.:| xs)
 
 main :: IO ()
 main = do
@@ -51,6 +54,7 @@ main = do
                 putStrLn $ "Current directory: " <> pwd
                 go
             Builtin (Echo msg) -> putStrLn msg *> go
-            Other cmd -> do
-                putStrLn $ "The command was: " <> cmd
+            Other (cmd NonEmpty.:| args) -> do
+                putStrLn $ "The command was: " <> cmd <> ", " <> show args
+                Proc.callProcess cmd args
                 go

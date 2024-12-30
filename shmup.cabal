@@ -18,6 +18,7 @@ library
     , async
     , base
     , directory
+    , process
 
   hs-source-dirs:   src-lib
   default-language: GHC2024
