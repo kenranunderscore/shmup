@@ -12,6 +12,7 @@ data Builtin
     = Exit
     | Cd FilePath
     | Pwd
+    | Echo String
     deriving (Show, Eq)
 
 data Command
@@ -26,6 +27,7 @@ readCommand line =
         "exit" : _ -> Builtin Exit
         "cd" : dir : _ -> Builtin (Cd dir)
         "pwd" : _ -> Builtin Pwd
+        "echo" : msg : _ -> Builtin (Echo msg)
         _ -> Other line
 
 main :: IO ()
@@ -48,6 +50,7 @@ main = do
                 pwd <- Dir.getCurrentDirectory
                 putStrLn $ "Current directory: " <> pwd
                 go
+            Builtin (Echo msg) -> putStrLn msg *> go
             Other cmd -> do
                 putStrLn $ "The command was: " <> cmd
                 go
