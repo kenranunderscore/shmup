@@ -21,17 +21,18 @@ data Builtin
 data Command
     = Builtin Builtin
     | Other (NonEmpty String)
+    | None
     deriving (Show, Eq)
 
 readCommand :: String -> Command
 readCommand line =
     case words line of
-        [] -> error "impossible?"
+        [] -> None
         "exit" : _ -> Builtin Exit
         "cd" : dir : _ -> Builtin (Cd dir)
         "pwd" : _ -> Builtin Pwd
-        "echo" : msg : _ -> Builtin (Echo msg)
-        args@(x : xs) -> Other (x NonEmpty.:| xs)
+        "echo" : msg -> Builtin (Echo $ unwords msg)
+        (x : xs) -> Other (x NonEmpty.:| xs)
 
 main :: IO ()
 main = do
@@ -42,9 +43,9 @@ main = do
         drawPrompt
         line <- getLine
         case readCommand line of
+            None -> go
             Builtin Exit -> do
                 putStrLn "Exiting..."
-                pure ()
             Builtin (Cd dir) -> do
                 putStrLn $ "Changing directory to: " <> dir
                 Dir.setCurrentDirectory dir
