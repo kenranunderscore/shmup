@@ -11,6 +11,7 @@ import Control.Monad.State.Strict qualified as State
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import System.Directory qualified as Dir
+import System.Exit (ExitCode (..))
 import System.IO (BufferMode (..), hFlush, hSetBuffering, stdout)
 import System.Process qualified as Proc
 
@@ -35,8 +36,18 @@ parseCommand line =
 
 data S = S
     { input :: String
+    , pwd :: FilePath
+    , lastError :: Maybe Int
     }
     deriving stock (Show)
+
+initialState :: FilePath -> S
+initialState pwd =
+    S
+        { input = mempty
+        , pwd
+        , lastError = Nothing
+        }
 
 class (Monad m) => TTY m where
     flush :: m ()
@@ -56,13 +67,14 @@ writeLn s = do
     putch '\n'
     flush
 
-drawPrompt :: (TTY m) => m ()
-drawPrompt = write "$ " >> flush
-
-data Input
-    = Unfinished String
-    | Command Command
-    deriving stock (Show)
+drawPrompt :: (Shell m) => m ()
+drawPrompt = do
+    lastError <- State.gets (.lastError)
+    let prompt = case lastError of
+            Nothing -> "$ "
+            Just code -> "[" <> show code <> "] $ "
+    write prompt
+    flush
 
 readInput :: (Shell m) => m Command
 readInput = do
@@ -78,6 +90,16 @@ readInput = do
 
 type Shell m = (TTY m, MonadState S m)
 
+runChildProcess :: (Shell m, MonadIO m) => String -> [String] -> m ()
+runChildProcess cmd args = do
+    pwd <- State.gets (.pwd)
+    let createProcess = (Proc.proc cmd args){Proc.cwd = Just pwd}
+    (_, _, _, handle) <- liftIO $ Proc.createProcess createProcess
+    exitCode <- liftIO $ Proc.waitForProcess handle
+    case exitCode of
+        ExitSuccess -> State.modify' (\s -> s{lastError = Nothing})
+        ExitFailure code -> State.modify' (\s -> s{lastError = Just code})
+
 run :: (Shell m, MonadIO m) => m ()
 run = do
     drawPrompt
@@ -88,10 +110,10 @@ run = do
             writeLn "Exiting..."
         CD dir -> do
             writeLn $ "Changing directory to: " <> dir
-            liftIO $ Dir.setCurrentDirectory dir
+            State.modify' (\s -> s{pwd = dir})
             run
         PWD -> do
-            pwd <- liftIO Dir.getCurrentDirectory
+            pwd <- State.gets (.pwd)
             writeLn $ "Current directory: " <> pwd
             run
         Echo msg -> do
@@ -99,10 +121,11 @@ run = do
             run
         Other (cmd NonEmpty.:| args) -> do
             writeLn $ "The command was: " <> cmd <> ", " <> show args
-            liftIO $ Proc.callProcess cmd args
+            runChildProcess cmd args
             run
 
 main :: IO ()
 main = do
     hSetBuffering stdout LineBuffering
-    void $ State.runStateT run (S mempty)
+    pwd <- Dir.getCurrentDirectory
+    void $ State.runStateT run (initialState pwd)
