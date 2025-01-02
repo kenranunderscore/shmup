@@ -11,27 +11,23 @@ drawPrompt = do
     putStr "$ "
     hFlush stdout
 
-data Builtin
-    = Exit
-    | Cd FilePath
-    | Pwd
-    | Echo String
-    deriving (Show, Eq)
-
 data Command
-    = Builtin Builtin
+    = None
+    | Exit
+    | CD FilePath
+    | Echo String
+    | PWD
     | Other (NonEmpty String)
-    | None
-    deriving (Show, Eq)
+    deriving stock (Show, Eq)
 
 readCommand :: String -> Command
 readCommand line =
     case words line of
         [] -> None
-        "exit" : _ -> Builtin Exit
-        "cd" : dir : _ -> Builtin (Cd dir)
-        "pwd" : _ -> Builtin Pwd
-        "echo" : msg -> Builtin (Echo $ unwords msg)
+        "exit" : _ -> Exit
+        "cd" : dir : _ -> (CD dir)
+        "pwd" : _ -> PWD
+        "echo" : msg -> (Echo $ unwords msg)
         (x : xs) -> Other (x NonEmpty.:| xs)
 
 main :: IO ()
@@ -44,17 +40,17 @@ main = do
         line <- getLine
         case readCommand line of
             None -> go
-            Builtin Exit -> do
+            Exit -> do
                 putStrLn "Exiting..."
-            Builtin (Cd dir) -> do
+            CD dir -> do
                 putStrLn $ "Changing directory to: " <> dir
                 Dir.setCurrentDirectory dir
                 go
-            Builtin Pwd -> do
+            PWD -> do
                 pwd <- Dir.getCurrentDirectory
                 putStrLn $ "Current directory: " <> pwd
                 go
-            Builtin (Echo msg) -> putStrLn msg *> go
+            Echo msg -> putStrLn msg *> go
             Other (cmd NonEmpty.:| args) -> do
                 putStrLn $ "The command was: " <> cmd <> ", " <> show args
                 Proc.callProcess cmd args
