@@ -8,11 +8,13 @@ import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Class (MonadState)
 import Control.Monad.State.Strict qualified as State
+import Data.Function ((&))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import System.Directory qualified as Dir
 import System.Exit (ExitCode (..))
 import System.IO (BufferMode (..), hFlush, hSetBuffering, stdout)
+import System.Posix qualified as Posix
 import System.Process qualified as Proc
 
 data Command
@@ -21,6 +23,7 @@ data Command
     | CD FilePath
     | Echo String
     | PWD
+    | ClearScreen
     | Other (NonEmpty String)
     deriving stock (Show, Eq)
 
@@ -80,6 +83,8 @@ readInput :: (Shell m) => m Command
 readInput = do
     c <- getch
     case c of
+        '\f' -> do
+            pure ClearScreen
         '\n' -> do
             input <- State.gets (.input)
             State.modify' (\s -> s{input = mempty})
@@ -119,13 +124,32 @@ run = do
         Echo msg -> do
             writeLn msg
             run
+        ClearScreen -> do
+            write "\ESC[2J\ESC[H"
+            flush
+            run
         Other (cmd NonEmpty.:| args) -> do
             writeLn $ "The command was: " <> cmd <> ", " <> show args
             runChildProcess cmd args
             run
 
+enableRawMode :: IO Posix.TerminalAttributes
+enableRawMode = do
+    oldAttrs <- Posix.getTerminalAttributes Posix.stdInput
+    let newAttrs =
+            oldAttrs
+                & withoutMode Posix.EnableEcho
+                & withoutMode Posix.ProcessInput
+                & withoutMode Posix.KeyboardInterrupts
+    Posix.setTerminalAttributes Posix.stdInput newAttrs Posix.Immediately
+    pure oldAttrs
+  where
+    withoutMode = flip Posix.withoutMode
+
 main :: IO ()
 main = do
     hSetBuffering stdout LineBuffering
+    termAttrs <- enableRawMode
     pwd <- Dir.getCurrentDirectory
     void $ State.runStateT run (initialState pwd)
+    Posix.setTerminalAttributes Posix.stdInput termAttrs Posix.Immediately

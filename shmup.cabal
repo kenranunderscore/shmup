@@ -20,6 +20,7 @@ library
     , directory
     , mtl
     , process
+    , unix
 
   hs-source-dirs:   src-lib
   default-language: GHC2024
