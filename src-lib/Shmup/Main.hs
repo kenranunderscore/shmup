@@ -188,11 +188,13 @@ readKeys = reverse <$> go []
   where
     go acc = do
         key <- getKeyPressed
+        when (key /= KeyNull) (traceM $ "   key: " <> show key)
         let i = fromEnum key
         let c = toLower (chr i)
         if
+            | key == KeySpace -> go (c : acc)
+            | key == KeyEnter -> go ('\r' : acc)
             | i > 96 -> go acc
-            | i == 32 -> go (c : acc)
             | i < 39 -> pure acc
             | otherwise -> go (c : acc)
 
