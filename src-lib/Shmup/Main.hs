@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
@@ -14,6 +15,7 @@ import Data.ByteString qualified as BS
 import Data.Function ((&))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
+import Debug.Trace
 import System.Directory qualified as Dir
 import System.Exit (ExitCode (..))
 import System.IO (BufferMode (..), hFlush, hSetBuffering, stdout)
@@ -21,7 +23,7 @@ import System.Posix qualified as Posix
 import System.Posix.ByteString qualified as PosixBS
 import System.Process qualified as Proc
 
-import Data.Char (chr)
+import Data.Char (chr, toLower)
 import Foreign (Ptr)
 import Foreign.C
 import Foreign.Ptr (nullPtr)
@@ -177,11 +179,29 @@ readPty fd = do
     _ <- forkIO $ forever $ do
         output <- PosixBS.fdRead fd 4096
         let text = map (chr . fromEnum) (BS.unpack output)
-        atomically $ swapTVar res text
+        traceM $ "  OUTPUT: " <> show text
+        atomically $ modifyTVar' res (<> text)
     pure res
 
-mainLoop :: WindowResources -> TVar String -> IO ()
-mainLoop window content = do
+readKeys :: IO String
+readKeys = reverse <$> go []
+  where
+    go acc = do
+        key <- getKeyPressed
+        let i = fromEnum key
+        let c = toLower (chr i)
+        if
+            | i > 96 -> go acc
+            | i == 32 -> go (c : acc)
+            | i < 39 -> pure acc
+            | otherwise -> go (c : acc)
+
+mainLoop ::
+    WindowResources ->
+    TVar String ->
+    Posix.Fd ->
+    IO ()
+mainLoop window content fd = do
     font <-
         managed window $
             loadFontEx
@@ -193,9 +213,9 @@ mainLoop window content = do
     fontSize = 50
     go font = do
         whenM (not <$> windowShouldClose) $ do
-            putStrLn "   ...reading chan"
+            input <- readKeys
+            Posix.fdWrite fd input
             text <- readTVarIO content
-            putStrLn "   ...read chan"
             drawing $ do
                 clearBackground black
                 drawTextEx font text (Vector2 20 12) fontSize 0 green
@@ -212,16 +232,17 @@ main = do
     (primary, secondary) <- Posix.openPseudoTerminal
     Posix.forkProcess $ do
         Posix.closeFd primary
-        setsid
+        -- TODO: understand
         -- TODO: error handling
+        setsid
         void $ ioctl secondary tiocsctty nullPtr
         void $ Posix.dupTo secondary Posix.stdInput
         void $ Posix.dupTo secondary Posix.stdError
         void $ Posix.dupTo secondary Posix.stdOutput
         Posix.closeFd secondary
-        Posix.executeFile "/bin/dash" True [] Nothing
+        Posix.executeFile "/bin/bash" True [] Nothing
     Posix.closeFd secondary
     content <- readPty primary
     withWindow 2000 1500 "the best is yet to shmup" 60 $ \window -> do
-        mainLoop window content
+        mainLoop window content primary
         closeWindow (Just window)
