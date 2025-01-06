@@ -9,7 +9,7 @@ build-type:      Simple
 extra-doc-files: CHANGELOG.md
 
 common warnings
-  ghc-options: -Wall -Werror=missing-fields
+  ghc-options: -Wall -Werror=missing-fields -threaded
 
 library
   import:           warnings
@@ -17,9 +17,12 @@ library
   build-depends:
     , async
     , base
+    , bytestring
     , directory
+    , h-raylib
     , mtl
     , process
+    , stm
     , unix
 
   hs-source-dirs:   src-lib

@@ -26,11 +26,15 @@
           ghc = "ghc910";
           pkgs = import nixpkgs {
             inherit system;
+            config.allowBroken = true;
             overlays = [
               (final: prev: {
                 hspkgs = prev.haskell.packages.${ghc}.override (old: {
                   overrides = final.lib.composeExtensions (old.overrides or (_: _: { })) (
-                    hfinal: hprev: { shmup = hfinal.callCabal2nix "shmup" (final.lib.cleanSource ./.) { }; }
+                    hfinal: hprev: {
+                      shmup = hfinal.callCabal2nix "shmup" (final.lib.cleanSource ./.) { };
+                      h-raylib = pkgs.haskell.lib.compose.doJailbreak hprev.h-raylib;
+                    }
                   );
                 });
               })
