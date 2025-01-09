@@ -247,4 +247,3 @@ main = do
     content <- readPty primary
     withWindow 2000 1500 "the best is yet to shmup" 60 $ \window -> do
         mainLoop window content primary
-        closeWindow (Just window)
