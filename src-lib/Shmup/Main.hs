@@ -209,6 +209,9 @@ data EscapeSequence
     | OSC String
     deriving (Show, Eq)
 
+normalText :: Parser String
+normalText = many1 (noneOf "\x1b")
+
 escapeSeq :: Parser EscapeSequence
 escapeSeq = do
     char '\ESC'
@@ -221,6 +224,11 @@ escapeSeq = do
             Just ']' -> OSC
             Just 'P' -> DCS
     pure $ ctor (params <> [ender])
+
+type TerminalOutput = [Either String EscapeSequence]
+
+terminalOutput :: Parser TerminalOutput
+terminalOutput = many $ (Right <$> escapeSeq) <|> (Left <$> normalText)
 
 parseOutput :: BS.ByteString -> String
 parseOutput output =
