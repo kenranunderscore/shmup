@@ -3,7 +3,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
-module Shmup.Main (main) where
+module Shmup.Main where
 
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -11,27 +11,29 @@ import Control.Monad (forever, void, when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Class (MonadState)
 import Control.Monad.State.Strict qualified as State
-import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as BS
+import Data.Char (chr, ord, toLower)
 import Data.Function ((&))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Debug.Trace
+import Foreign (Ptr)
+import Foreign.C
+import Foreign.Ptr (nullPtr)
+import Raylib.Core
+import Raylib.Core.Text
+import Raylib.Internal.Foreign
+import Raylib.Types
+import Raylib.Util
+import Raylib.Util.Colors
 import System.Directory qualified as Dir
 import System.Exit (ExitCode (..))
 import System.IO (BufferMode (..), hFlush, hSetBuffering, stdout)
 import System.Posix qualified as Posix
 import System.Posix.ByteString qualified as PosixBS
 import System.Process qualified as Proc
-
-import Data.Char (chr, toLower)
-import Foreign (Ptr)
-import Foreign.C
-import Foreign.Ptr (nullPtr)
-import Raylib.Core
-import Raylib.Core.Text
-import Raylib.Types
-import Raylib.Util
-import Raylib.Util.Colors
+import Text.Parsec
+import Text.Parsec.ByteString
 
 data Command
     = None
@@ -41,7 +43,7 @@ data Command
     | PWD
     | ClearScreen
     | Other (NonEmpty String)
-    deriving stock (Show, Eq)
+    deriving (Show, Eq)
 
 parseCommand :: String -> Command
 parseCommand line =
@@ -58,7 +60,7 @@ data S = S
     , pwd :: FilePath
     , lastError :: Maybe Int
     }
-    deriving stock (Show)
+    deriving (Show)
 
 initialState :: FilePath -> S
 initialState pwd =
@@ -173,14 +175,13 @@ shell = do
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM mb action = mb >>= (`when` action)
 
-readPty :: Posix.Fd -> IO (TVar String)
+readPty :: Posix.Fd -> IO (TVar BS.ByteString)
 readPty fd = do
     res <- newTVarIO mempty
     _ <- forkIO $ forever $ do
         output <- PosixBS.fdRead fd 4096
-        let text = map (chr . fromEnum) (BS.unpack output)
-        traceM $ "  OUTPUT: " <> show text
-        atomically $ modifyTVar' res (<> text)
+        traceM $ "  OUTPUT: " <> show output
+        atomically $ modifyTVar' res (<> output)
     pure res
 
 readKeys :: IO String
@@ -198,30 +199,57 @@ readKeys = reverse <$> go []
             | i < 39 -> pure acc
             | otherwise -> go (c : acc)
 
+fontSize :: Float
+fontSize = 50
+
+data EscapeSequence
+    = NoStarter String
+    | CSI String
+    | DCS String
+    | OSC String
+    deriving (Show, Eq)
+
+escapeSeq :: Parser EscapeSequence
+escapeSeq = do
+    char '\ESC'
+    starter <- optionMaybe (oneOf "[]P")
+    params <- many (digit <|> char ';')
+    ender <- char 'm' -- TODO: wrong, generally
+    let ctor = case starter of
+            Nothing -> NoStarter
+            Just '[' -> CSI
+            Just ']' -> OSC
+            Just 'P' -> DCS
+    pure $ ctor (params <> [ender])
+
+parseOutput :: BS.ByteString -> String
+parseOutput output =
+    reverse $
+        BS.foldl'
+            ( \acc c ->
+                if
+                    | c == '\ESC' -> acc
+                    | ord c < 127 -> c : acc
+            )
+            ""
+            output
+
 mainLoop ::
     WindowResources ->
-    TVar String ->
+    Font ->
+    TVar BS.ByteString ->
     Posix.Fd ->
     IO ()
-mainLoop window content fd = do
-    font <-
-        managed window $
-            loadFontEx
-                "/home/void/.nix-profile/share/fonts/truetype/CourierPrime-Regular.ttf"
-                (round fontSize)
-                mempty
-    go font
-  where
-    fontSize = 50
-    go font = do
-        whenM (not <$> windowShouldClose) $ do
-            input <- readKeys
-            Posix.fdWrite fd input
-            text <- readTVarIO content
-            drawing $ do
-                clearBackground black
-                drawTextEx font text (Vector2 20 12) fontSize 0 green
-            go font
+mainLoop window font content fd = do
+    whenM (not <$> windowShouldClose) $ do
+        input <- readKeys
+        Posix.fdWrite fd input
+        output <- readTVarIO content
+        let text = parseOutput output
+        drawing $ do
+            clearBackground black
+            drawTextEx font text (Vector2 20 12) fontSize 0 green
+        mainLoop window font content fd
 
 foreign import ccall "ioctl" ioctl :: Posix.Fd -> CUInt -> Ptr () -> IO CInt
 foreign import ccall "setsid" setsid :: IO ()
@@ -242,8 +270,14 @@ main = do
         void $ Posix.dupTo secondary Posix.stdError
         void $ Posix.dupTo secondary Posix.stdOutput
         Posix.closeFd secondary
-        Posix.executeFile "/bin/bash" True [] Nothing
+        Posix.executeFile "bash" True [] Nothing
     Posix.closeFd secondary
     content <- readPty primary
     withWindow 2000 1500 "the best is yet to shmup" 60 $ \window -> do
-        mainLoop window content primary
+        font <-
+            managed window $
+                loadFontEx
+                    "/home/void/.nix-profile/share/fonts/truetype/CourierPrime-Regular.ttf"
+                    (round fontSize)
+                    mempty
+        mainLoop window font content primary

@@ -8,11 +8,11 @@ maintainer:      johannes.maier@mailbox.org
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
 
-common warnings
+common options
   ghc-options: -Wall -Werror=missing-fields -threaded
 
 library
-  import:           warnings
+  import:           options
   exposed-modules:  Shmup.Main
   build-depends:
     , async
@@ -21,6 +21,7 @@ library
     , directory
     , h-raylib
     , mtl
+    , parsec
     , process
     , stm
     , unix
@@ -29,7 +30,7 @@ library
   default-language: GHC2024
 
 executable shmup
-  import:           warnings
+  import:           options
   main-is:          Main.hs
   build-depends:
     , base
@@ -37,3 +38,15 @@ executable shmup
 
   hs-source-dirs:   src-exe
   default-language: GHC2024
+
+test-suite shmup-spec
+  import:         options
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is:        Spec.hs
+  build-depends:
+    , base
+    , bytestring
+    , hspec
+    , parsec
+    , shmup
