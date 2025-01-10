@@ -13,6 +13,7 @@ import Data.Char (chr, ord, toLower)
 import Debug.Trace
 import Foreign (Ptr)
 import Foreign.C
+import Foreign.Marshal.Safe (with)
 import Foreign.Ptr (nullPtr)
 import Raylib.Core
 import Raylib.Core.Text
@@ -107,28 +108,37 @@ mainLoop window font dimensions@(Vector2 w h) content fd = do
         Posix.fdWrite fd input
         output <- readTVarIO content
         let termOutput = parseOutput output
-        -- traceM $ "   term output: " <> show termOutput
         drawing $ do
             clearBackground black
-            foldM_
-                ( \(row, col) -> \case
-                    Left c -> do
-                        case c of
-                            '\r' -> pure (row, col)
-                            '\n' -> pure (row + 1, 0)
-                            _ -> do
-                                let x = realToFrac col * w
-                                let y = realToFrac row * h
-                                drawTextEx font [c] (Vector2 x y) fontSize 0 green
-                                pure (row, col + 1)
-                    Right _seq -> pure (row, col)
-                )
-                (0 :: Integer, 0 :: Integer)
-                termOutput
+            drawFPS 1800 0
+            with font $ \font -> do
+                with green $ \green -> do
+                    foldM_
+                        ( \(row, col) -> \case
+                            Left c -> do
+                                case c of
+                                    '\r' -> pure (row, col)
+                                    '\n' -> pure (row + 1, 0)
+                                    _ -> do
+                                        let x = realToFrac col * w
+                                        let y = realToFrac row * h
+                                        drawTextEx' font [c] x y fontSize 0 green
+                                        pure (row, col + 1)
+                            Right _seq -> pure (row, col)
+                        )
+                        (0 :: Integer, 0 :: Integer)
+                        termOutput
         mainLoop window font dimensions content fd
 
 foreign import ccall "ioctl" ioctl :: Posix.Fd -> CUInt -> Ptr () -> IO CInt
 foreign import ccall "setsid" setsid :: IO ()
+foreign import ccall unsafe "draw_text_ex_no_vec" drawTextExNoVec :: Ptr Font -> CString -> Float -> Float -> Float -> Float -> Ptr Color -> IO ()
+
+{-# INLINE drawTextEx' #-}
+drawTextEx' :: Ptr Font -> String -> Float -> Float -> Float -> Float -> Ptr Color -> IO ()
+drawTextEx' font text x y size spacing color =
+    withCString text $ \s ->
+        drawTextExNoVec font s x y size spacing color
 
 tiocsctty :: CUInt
 tiocsctty = 21518
@@ -149,7 +159,7 @@ run = do
         Posix.executeFile "bash" True [] Nothing
     Posix.closeFd secondary
     content <- readPty primary
-    withWindow 2000 1500 "the best is yet to shmup" 30 $ \window -> do
+    withWindow 2000 1500 "the best is yet to shmup" 2000 $ \window -> do
         font <-
             managed window $
                 loadFontEx

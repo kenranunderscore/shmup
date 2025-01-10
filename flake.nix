@@ -50,6 +50,7 @@
               pkgs.hspkgs.cabal-install
               pkgs.hspkgs.cabal-fmt
               pkgs.hspkgs.haskell-language-server
+              pkgs.raylib
             ];
           };
         };
