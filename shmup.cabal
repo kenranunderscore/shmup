@@ -13,7 +13,11 @@ common options
 
 library
   import:           options
-  exposed-modules:  Shmup.Main
+  exposed-modules:
+    Shmup.Main
+    Shmup.Shell
+    Shmup.Terminal
+
   build-depends:
     , async
     , base

@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 import Test.Hspec
 import Text.Parsec
 
-import Shmup.Main hiding (main)
+import Shmup.Terminal
 
 spec :: Spec
 spec = do
@@ -21,11 +22,14 @@ spec = do
             parse escapeSeq "escape" "\ESC]7m" `shouldBe` Right (OSC "7m")
     describe "terminal output" $ do
         it "can be parsed" $ do
-            let Right res = parse terminalOutput "" "This is\ESC[31msome red text\ESC[0m"
+            let Right res = parse terminalOutput "" "A \ESC[31mb c\ESC[0m"
             res
-                `shouldBe` [ Left "This is"
+                `shouldBe` [ Left 'A'
+                           , Left ' '
                            , Right (CSI "31m")
-                           , Left "some red text"
+                           , Left 'b'
+                           , Left ' '
+                           , Left 'c'
                            , Right (CSI "0m")
                            ]
 
