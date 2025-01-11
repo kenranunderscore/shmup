@@ -55,39 +55,98 @@ readKeys = reverse <$> go []
 fontSize :: Float
 fontSize = 50
 
-data ControlSequence
-    = NoStarter String
-    | CSI String
-    | DCS String
-    | OSC String
-    deriving (Show, Eq)
-
 normalText :: Parser String
 normalText = many1 (noneOf "\x1b")
 
+isBetween :: Int -> Int -> Char -> Bool
+isBetween l h c = let o = ord c in o >= l && o <= h
+
 isIntermediate :: Char -> Bool
-isIntermediate c = ord c >= 0x20 && ord c <= 0x2f
+isIntermediate = isBetween 0x20 0x2f
 
-escapeSeq :: Parser ControlSequence
-escapeSeq = do
-    char '\ESC'
-    starter <- optionMaybe (oneOf "[]P")
+intermediate :: Parser Char
+intermediate = satisfy isIntermediate
+
+isParameter :: Char -> Bool
+isParameter = isBetween 0x30 0x3f
+
+isAlphabetic :: Char -> Bool
+isAlphabetic = isBetween 0x40 0x7e
+
+parameter :: Parser Char
+parameter = satisfy isParameter
+
+uppercase :: Parser Char
+uppercase = satisfy (isBetween 0x40 0x5f)
+
+lowercase :: Parser Char
+lowercase = satisfy (isBetween 0x60 0x7e)
+
+alphabetic :: Parser Char
+alphabetic = satisfy isAlphabetic
+
+delete :: Parser Char
+delete = char '\DEL'
+
+esc :: Parser ()
+esc = void $ char '\ESC'
+
+controlSeq :: Parser EscapeSeq
+controlSeq = do
+    char '['
     params <- many (digit <|> oneOf ":;<=>?")
-    void $ skipMany (satisfy isIntermediate)
+    void $ skipMany intermediate
     terminator <- letter
-    let ctor = case starter of
-            Nothing -> NoStarter
-            Just '[' -> CSI
-            Just ']' -> OSC
-            Just 'P' -> DCS
-            _ -> error "impossibile"
-    pure $ ctor (params <> [terminator])
+    pure $ ControlSeq $ params <> [terminator]
 
-type TerminalOutput = [Either Char ControlSequence]
+-- TODO: C0, C1, G1
+data EscapeSeq
+    = Private String
+    | StandardSeq String
+    | ControlSeq String
+    | Uppercase Char -- TODO: convert to C1
+    deriving stock (Show, Eq)
+
+intermediateSeq :: Parser EscapeSeq
+intermediateSeq = do
+    int <- many1 intermediate
+    c <- anyChar
+    let res = int <> [c]
+    if
+        | isParameter c -> pure $ Private res
+        | isAlphabetic c -> pure $ StandardSeq res
+        | otherwise -> unexpected "expected param or alpha after intermediate"
+
+privateSeq :: Parser EscapeSeq
+privateSeq = Private . (\c -> [c]) <$> parameter
+
+escapeSeq :: Parser EscapeSeq
+escapeSeq = do
+    esc
+    optional delete
+    choice
+        [ intermediateSeq
+        , privateSeq
+        , controlSeq
+        , Uppercase <$> uppercase
+        , StandardSeq . (\c -> [c]) <$> lowercase
+        ]
+
+data Rune
+    = Glyph Char
+    | EscapeSequence EscapeSeq
+    deriving stock (Show, Eq)
+
+type TerminalOutput = [Rune]
+
+rune :: Parser Rune
+rune =
+    (EscapeSequence <$> controlSeq)
+        <|> (EscapeSequence <$> escapeSeq)
+        <|> (Glyph <$> noneOf "\x1b")
 
 terminalOutput :: Parser TerminalOutput
-terminalOutput = do
-    many $ (Right <$> escapeSeq) <|> (Left <$> noneOf "\x1b")
+terminalOutput = many rune
 
 parseOutput :: BS.ByteString -> TerminalOutput
 parseOutput output =
@@ -111,20 +170,20 @@ mainLoop window font dimensions@(Vector2 w h) content fd = do
         drawing $ do
             clearBackground black
             drawFPS 1800 0
-            with font $ \font -> do
-                with green $ \green -> do
+            with font $ \font' -> do
+                with green $ \green' -> do
                     foldM_
                         ( \(row, col) -> \case
-                            Left c -> do
+                            Glyph c -> do
                                 case c of
                                     '\r' -> pure (row, col)
                                     '\n' -> pure (row + 1, 0)
                                     _ -> do
                                         let x = realToFrac col * w
                                         let y = realToFrac row * h
-                                        drawTextEx' font [c] x y fontSize 0 green
+                                        drawTextEx' font' [c] x y fontSize 0 green'
                                         pure (row, col + 1)
-                            Right _seq -> pure (row, col)
+                            _ -> pure (row, col)
                         )
                         (0 :: Integer, 0 :: Integer)
                         termOutput
