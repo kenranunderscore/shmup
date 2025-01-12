@@ -1,0 +1,7 @@
+packages: .
+
+jobs: $ncpus
+
+package *
+        ghc-options: -O0
+                     -Werror=incomplete-patterns
