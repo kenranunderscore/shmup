@@ -17,6 +17,7 @@ library
     Shmup.Main
     Shmup.Shell
     Shmup.Terminal
+    Shmup.Terminal.Parser
 
   build-depends:
     , async
@@ -45,13 +46,16 @@ executable shmup
   default-language: GHC2024
 
 test-suite shmup-spec
-  import:         options
-  type:           exitcode-stdio-1.0
-  hs-source-dirs: test
-  main-is:        Spec.hs
+  import:           options
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Spec.hs
+  other-modules:    Shmup.Terminal.ParserSpec
   build-depends:
     , base
     , bytestring
     , hspec
     , parsec
     , shmup
+
+  default-language: GHC2024

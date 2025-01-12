@@ -7,23 +7,22 @@ module Shmup.Terminal where
 
 import Control.Concurrent
 import Control.Concurrent.STM
-import Control.Monad (foldM_, forever, void, when)
+import Control.Monad
 import Data.ByteString.Char8 qualified as BS
-import Data.Char (chr, ord, toLower)
+import Data.Char qualified as Char
 import Debug.Trace
 import Foreign (Ptr)
 import Foreign.C
-import Foreign.Marshal.Safe (with)
+import Foreign.Marshal.Safe qualified as Marshal
 import Foreign.Ptr (nullPtr)
 import Raylib.Core
 import Raylib.Core.Text
 import Raylib.Types
 import Raylib.Util
 import Raylib.Util.Colors
+import Shmup.Terminal.Parser
 import System.Posix qualified as Posix
 import System.Posix.ByteString qualified as PosixBS
-import Text.Parsec
-import Text.Parsec.ByteString
 
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM mb action = mb >>= (`when` action)
@@ -44,7 +43,7 @@ readKeys = reverse <$> go []
         key <- getKeyPressed
         when (key /= KeyNull) (traceM $ "   key: " <> show key)
         let i = fromEnum key
-        let c = toLower (chr i)
+        let c = Char.toLower (Char.chr i)
         if
             | key == KeySpace -> go (c : acc)
             | key == KeyEnter -> go ('\r' : acc)
@@ -54,105 +53,6 @@ readKeys = reverse <$> go []
 
 fontSize :: Float
 fontSize = 50
-
-normalText :: Parser String
-normalText = many1 (noneOf "\x1b")
-
-isBetween :: Int -> Int -> Char -> Bool
-isBetween l h c = let o = ord c in o >= l && o <= h
-
-isIntermediate :: Char -> Bool
-isIntermediate = isBetween 0x20 0x2f
-
-intermediate :: Parser Char
-intermediate = satisfy isIntermediate
-
-isParameter :: Char -> Bool
-isParameter = isBetween 0x30 0x3f
-
-isAlphabetic :: Char -> Bool
-isAlphabetic = isBetween 0x40 0x7e
-
-parameter :: Parser Char
-parameter = satisfy isParameter
-
-uppercase :: Parser Char
-uppercase = satisfy (isBetween 0x40 0x5f)
-
-lowercase :: Parser Char
-lowercase = satisfy (isBetween 0x60 0x7e)
-
-alphabetic :: Parser Char
-alphabetic = satisfy isAlphabetic
-
-delete :: Parser Char
-delete = char '\DEL'
-
-esc :: Parser ()
-esc = void $ char '\ESC'
-
-controlSeq :: Parser EscapeSeq
-controlSeq = do
-    char '['
-    params <- many (digit <|> oneOf ":;<=>?")
-    void $ skipMany intermediate
-    terminator <- letter
-    pure $ ControlSeq $ params <> [terminator]
-
--- TODO: C0, C1, G1
-data EscapeSeq
-    = Private String
-    | StandardSeq String
-    | ControlSeq String
-    | Uppercase Char -- TODO: convert to C1
-    deriving stock (Show, Eq)
-
-intermediateSeq :: Parser EscapeSeq
-intermediateSeq = do
-    int <- many1 intermediate
-    c <- anyChar
-    let res = int <> [c]
-    if
-        | isParameter c -> pure $ Private res
-        | isAlphabetic c -> pure $ StandardSeq res
-        | otherwise -> unexpected "expected param or alpha after intermediate"
-
-privateSeq :: Parser EscapeSeq
-privateSeq = Private . (\c -> [c]) <$> parameter
-
-escapeSeq :: Parser EscapeSeq
-escapeSeq = do
-    esc
-    optional delete
-    choice
-        [ intermediateSeq
-        , privateSeq
-        , controlSeq
-        , Uppercase <$> uppercase
-        , StandardSeq . (\c -> [c]) <$> lowercase
-        ]
-
-data Rune
-    = Glyph Char
-    | EscapeSequence EscapeSeq
-    deriving stock (Show, Eq)
-
-type TerminalOutput = [Rune]
-
-rune :: Parser Rune
-rune =
-    (EscapeSequence <$> controlSeq)
-        <|> (EscapeSequence <$> escapeSeq)
-        <|> (Glyph <$> noneOf "\x1b")
-
-terminalOutput :: Parser TerminalOutput
-terminalOutput = many rune
-
-parseOutput :: BS.ByteString -> TerminalOutput
-parseOutput output =
-    case parse terminalOutput "terminal output" output of
-        Left err -> error (show err)
-        Right res -> res
 
 mainLoop ::
     WindowResources ->
@@ -170,8 +70,8 @@ mainLoop window font dimensions@(Vector2 w h) content fd = do
         drawing $ do
             clearBackground black
             drawFPS 1800 0
-            with font $ \font' -> do
-                with green $ \green' -> do
+            Marshal.with font $ \font' -> do
+                Marshal.with green $ \green' -> do
                     foldM_
                         ( \(row, col) -> \case
                             Glyph c -> do
