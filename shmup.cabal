@@ -23,6 +23,7 @@ library
     , async
     , base
     , bytestring
+    , containers
     , directory
     , h-raylib
     , mtl

@@ -10,6 +10,8 @@ import Control.Concurrent.STM
 import Control.Monad
 import Data.ByteString.Char8 qualified as BS
 import Data.Char qualified as Char
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Debug.Trace
 import Foreign (Ptr)
 import Foreign.C
@@ -36,6 +38,32 @@ readPty fd = do
         atomically $ modifyTVar' res (<> output)
     pure res
 
+data Modifier
+    = Ctrl
+    | Alt
+    | Shift
+    deriving stock (Show, Eq, Ord)
+
+keyModPairs :: [((KeyboardKey, KeyboardKey), Modifier)]
+keyModPairs =
+    [ ((KeyLeftShift, KeyRightShift), Shift)
+    , ((KeyLeftAlt, KeyRightAlt), Alt)
+    , ((KeyLeftControl, KeyRightControl), Ctrl)
+    ]
+
+updateModifiers :: Set Modifier -> IO (Set Modifier)
+updateModifiers mods = do
+    foldM
+        ( \acc ((left, right), m) -> do
+            leftDown <- isKeyDown left
+            rightDown <- isKeyDown right
+            if leftDown || rightDown
+                then pure $ Set.insert m acc
+                else pure $ Set.delete m acc
+        )
+        mods
+        keyModPairs
+
 readKeys :: IO String
 readKeys = reverse <$> go []
   where
@@ -52,18 +80,20 @@ readKeys = reverse <$> go []
             | otherwise -> go (c : acc)
 
 fontSize :: Float
-fontSize = 50
+fontSize = 40
 
 mainLoop ::
     WindowResources ->
     Font ->
+    Set Modifier ->
     Vector2 ->
     TVar BS.ByteString ->
     Posix.Fd ->
     IO ()
-mainLoop window font dimensions@(Vector2 w h) content fd = do
+mainLoop window font mods dimensions@(Vector2 w h) content fd = do
     whenM (not <$> windowShouldClose) $ do
         input <- readKeys
+        newMods <- updateModifiers mods
         Posix.fdWrite fd input
         output <- readTVarIO content
         let termOutput = parseOutput output
@@ -87,7 +117,7 @@ mainLoop window font dimensions@(Vector2 w h) content fd = do
                         )
                         (0 :: Integer, 0 :: Integer)
                         termOutput
-        mainLoop window font dimensions content fd
+        mainLoop window font newMods dimensions content fd
 
 foreign import ccall "ioctl" ioctl :: Posix.Fd -> CUInt -> Ptr () -> IO CInt
 foreign import ccall "setsid" setsid :: IO ()
@@ -126,4 +156,4 @@ run = do
                     (round fontSize)
                     mempty
         dimensions <- measureTextEx font "m" fontSize 0
-        mainLoop window font dimensions content primary
+        mainLoop window font mempty dimensions content primary
